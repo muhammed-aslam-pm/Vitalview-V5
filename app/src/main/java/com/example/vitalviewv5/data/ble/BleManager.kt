@@ -7,6 +7,7 @@ import android.bluetooth.le.ScanCallback
 import android.bluetooth.le.ScanResult
 import android.bluetooth.le.ScanSettings
 import android.content.Context
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
 import androidx.core.app.ActivityCompat
@@ -31,11 +32,11 @@ class BleManager @Inject constructor(
     private var characteristicWrite: BluetoothGattCharacteristic? = null
     private var characteristicNotify: BluetoothGattCharacteristic? = null
 
-    // UUIDs - Update these based on your device
+    // UUIDs - UPDATED TO MATCH YOUR DEVICE
     companion object {
         private const val SERVICE_UUID = "0000fff0-0000-1000-8000-00805f9b34fb"
-        private const val CHARACTERISTIC_WRITE_UUID = "0000fff1-0000-1000-8000-00805f9b34fb"
-        private const val CHARACTERISTIC_NOTIFY_UUID = "0000fff2-0000-1000-8000-00805f9b34fb"
+        private const val CHARACTERISTIC_WRITE_UUID = "0000fff6-0000-1000-8000-00805f9b34fb"
+        private const val CHARACTERISTIC_NOTIFY_UUID = "0000fff7-0000-1000-8000-00805f9b34fb"
         private val CLIENT_CHARACTERISTIC_CONFIG =
             java.util.UUID.fromString("00002902-0000-1000-8000-00805f9b34fb")
     }
@@ -115,9 +116,13 @@ class BleManager @Inject constructor(
                         Timber.d("Connected to GATT server")
                         trySend(ConnectionState.Connected)
                         try {
+                            // Small delay before discovering services
+                            Thread.sleep(300)
                             gatt.discoverServices()
                         } catch (e: SecurityException) {
                             Timber.e(e, "Error discovering services")
+                        } catch (e: InterruptedException) {
+                            Timber.e(e, "Sleep interrupted")
                         }
                     }
                     BluetoothProfile.STATE_DISCONNECTED -> {
@@ -133,40 +138,117 @@ class BleManager @Inject constructor(
 
             override fun onServicesDiscovered(gatt: BluetoothGatt, status: Int) {
                 if (status == BluetoothGatt.GATT_SUCCESS) {
-                    Timber.d("Services discovered")
+                    Timber.d("Services discovered successfully")
+
+                    // Log all discovered services
+                    gatt.services.forEach { service ->
+                        Timber.d("Service UUID: ${service.uuid}")
+                        service.characteristics.forEach { char ->
+                            Timber.d("  Characteristic UUID: ${char.uuid}")
+                        }
+                    }
 
                     val service = gatt.getService(java.util.UUID.fromString(SERVICE_UUID))
-                    characteristicWrite = service?.getCharacteristic(
+                    if (service == null) {
+                        Timber.e("Target service not found: $SERVICE_UUID")
+                        trySend(ConnectionState.Disconnected)
+                        return
+                    }
+
+                    characteristicWrite = service.getCharacteristic(
                         java.util.UUID.fromString(CHARACTERISTIC_WRITE_UUID)
                     )
-                    characteristicNotify = service?.getCharacteristic(
+                    characteristicNotify = service.getCharacteristic(
                         java.util.UUID.fromString(CHARACTERISTIC_NOTIFY_UUID)
                     )
 
+                    if (characteristicNotify == null) {
+                        Timber.e("Notify characteristic not found")
+                        trySend(ConnectionState.Disconnected)
+                        return
+                    }
+
+                    if (characteristicWrite == null) {
+                        Timber.e("Write characteristic not found")
+                    } else {
+                        Timber.d("Write characteristic found: $CHARACTERISTIC_WRITE_UUID")
+                    }
+
+                    // Enable notifications
                     characteristicNotify?.let { characteristic ->
                         try {
-                            gatt.setCharacteristicNotification(characteristic, true)
-                            val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
-                            descriptor?.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                            gatt.writeDescriptor(descriptor)
+                            val success = gatt.setCharacteristicNotification(characteristic, true)
+                            Timber.d("setCharacteristicNotification: $success")
 
-                            trySend(ConnectionState.Ready)
+                            if (success) {
+                                val descriptor = characteristic.getDescriptor(CLIENT_CHARACTERISTIC_CONFIG)
+                                if (descriptor != null) {
+                                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                                        gatt.writeDescriptor(
+                                            descriptor,
+                                            BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                        )
+                                    } else {
+                                        @Suppress("DEPRECATION")
+                                        descriptor.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                                        @Suppress("DEPRECATION")
+                                        gatt.writeDescriptor(descriptor)
+                                    }
+                                    Timber.d("Descriptor write initiated")
+                                } else {
+                                    Timber.e("Descriptor not found")
+                                    trySend(ConnectionState.Ready)
+                                }
+                            } else {
+                                Timber.e("Failed to set characteristic notification")
+                            }
                         } catch (e: SecurityException) {
                             Timber.e(e, "Error enabling notifications")
                         }
                     }
+                } else {
+                    Timber.e("Service discovery failed with status: $status")
                 }
             }
 
+            override fun onDescriptorWrite(
+                gatt: BluetoothGatt,
+                descriptor: BluetoothGattDescriptor,
+                status: Int
+            ) {
+                if (status == BluetoothGatt.GATT_SUCCESS) {
+                    Timber.d("Descriptor write successful - notifications enabled")
+                    trySend(ConnectionState.Ready)
+                } else {
+                    Timber.e("Descriptor write failed: $status")
+                    trySend(ConnectionState.Ready) // Still try to proceed
+                }
+            }
+
+            @Deprecated("Deprecated in API 33")
             override fun onCharacteristicChanged(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic
             ) {
                 val data = characteristic.value
-                Timber.d("Data received: ${data.contentToString()}")
-                onDataReceived(data)
+                Timber.d("Data received (deprecated): ${data?.contentToString()}")
+                data?.let {
+                    onDataReceived(it)
+                    broadcastData(it)
+                }
             }
 
+            override fun onCharacteristicChanged(
+                gatt: BluetoothGatt,
+                characteristic: BluetoothGattCharacteristic,
+                value: ByteArray
+            ) {
+                Timber.d("Data received: ${value.contentToString()}")
+                onDataReceived(value)
+                broadcastData(value)
+            }
+
+            @Deprecated("Deprecated in API 33")
             override fun onCharacteristicWrite(
                 gatt: BluetoothGatt,
                 characteristic: BluetoothGattCharacteristic,
@@ -192,13 +274,41 @@ class BleManager @Inject constructor(
         }
     }
 
+    private fun broadcastData(data: ByteArray) {
+        try {
+            val intent = Intent("BLE_DATA_RECEIVED")
+            intent.putExtra("data", data)
+            context.sendBroadcast(intent)
+            Timber.d("✅ Data broadcasted successfully: ${data.contentToString()}")
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error broadcasting data")
+        }
+    }
+
+
+
     fun writeData(data: ByteArray): Boolean {
         if (!hasBluetoothPermissions()) return false
+        if (data.isEmpty()) {
+            Timber.w("Attempted to write empty data")
+            return false
+        }
 
         return try {
             characteristicWrite?.let { characteristic ->
-                characteristic.value = data
-                bluetoothGatt?.writeCharacteristic(characteristic) ?: false
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    val result = bluetoothGatt?.writeCharacteristic(
+                        characteristic,
+                        data,
+                        BluetoothGattCharacteristic.WRITE_TYPE_DEFAULT
+                    )
+                    result == BluetoothGatt.GATT_SUCCESS
+                } else {
+                    @Suppress("DEPRECATION")
+                    characteristic.value = data
+                    @Suppress("DEPRECATION")
+                    bluetoothGatt?.writeCharacteristic(characteristic) ?: false
+                }
             } ?: false
         } catch (e: SecurityException) {
             Timber.e(e, "Error writing data")
@@ -213,6 +323,8 @@ class BleManager @Inject constructor(
             bluetoothGatt?.disconnect()
             bluetoothGatt?.close()
             bluetoothGatt = null
+            characteristicWrite = null
+            characteristicNotify = null
             Timber.d("Disconnected from device")
         } catch (e: SecurityException) {
             Timber.e(e, "Error disconnecting")

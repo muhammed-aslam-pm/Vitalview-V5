@@ -9,6 +9,7 @@ import com.example.vitalviewv5.util.Resource
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import timber.log.Timber
 import javax.inject.Inject
 
 @HiltViewModel
@@ -61,30 +62,35 @@ class MainViewModel @Inject constructor(
     private fun observeHealthData() {
         viewModelScope.launch {
             repository.getLatestHeartRate().collect { data ->
+                Timber.d("🔵 ViewModel received HR: $data")
                 _heartRate.value = data
             }
         }
 
         viewModelScope.launch {
             repository.getLatestBloodOxygen().collect { data ->
+                Timber.d("🔵 ViewModel received SpO2: $data")
                 _bloodOxygen.value = data
             }
         }
 
         viewModelScope.launch {
             repository.getLatestBloodPressure().collect { data ->
+                Timber.d("🔵 ViewModel received BP: $data")
                 _bloodPressure.value = data
             }
         }
 
         viewModelScope.launch {
             repository.getLatestTemperature().collect { data ->
+                Timber.d("🔵 ViewModel received Temp: $data")
                 _temperature.value = data
             }
         }
 
         viewModelScope.launch {
             repository.getLatestSteps().collect { data ->
+                Timber.d("🔵 ViewModel received Steps: $data")
                 _steps.value = data
             }
         }
