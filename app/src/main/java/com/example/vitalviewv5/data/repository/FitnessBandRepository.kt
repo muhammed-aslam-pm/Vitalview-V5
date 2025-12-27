@@ -137,38 +137,59 @@ class FitnessBandRepository @Inject constructor(
 
     // ✅ FIXED: Parse and emit real-time data to the UI flows
     private suspend fun processRealTimeData(dataMap: Map<String, Any>) {
-        @Suppress("UNCHECKED_CAST")
-        val dicData = dataMap["dicData"] as? Map<String, Any> ?: return
+        try {
+            val dicData = dataMap["dicData"]
 
-        val heartRate = (dicData["heartRate"] as? Number)?.toInt() ?: 0
-        val bloodOxygen = (dicData["Blood_oxygen"] as? Number)?.toInt() ?: 0
-        val temperature = (dicData["TempData"] as? Number)?.toFloat() ?: 0f
-        val steps = (dicData["step"] as? Number)?.toInt() ?: 0
+            if (dicData == null) {
+                Timber.w("⚠️ Type 23: dicData is null, full map: $dataMap")
+                return
+            }
 
-        // Use current time for real-time display
-        val timestamp = System.currentTimeMillis()
-        val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(timestamp))
+            Timber.d("🔍 Real-time dicData: $dicData")
+            Timber.d("🔍 Real-time dicData type: ${dicData.javaClass.name}")
 
-        // 1. Emit Heart Rate
-        if (heartRate > 0) {
-            _realTimeHeartRate.emit(HeartRateData(timestamp, heartRate, dateStr))
+            // Parse the string representation
+            val dicDataStr = dicData.toString()
+
+            // Extract values using regex
+            val heartRate = Regex("heartRate=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val bloodOxygen = Regex("Bloodoxygen=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val temperature = Regex("TempData=([\\d.]+)").find(dicDataStr)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
+            val steps = Regex("step=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+
+            val timestamp = System.currentTimeMillis()
+            val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+                .format(Date(timestamp))
+
+            Timber.d("⚡ Parsed real-time: HR=$heartRate, SpO2=$bloodOxygen, Temp=$temperature, Steps=$steps")
+
+            // Emit Heart Rate
+            if (heartRate > 0) {
+                _realTimeHeartRate.emit(HeartRateData(timestamp, heartRate, dateStr))
+                Timber.d("📤 Emitted HR: $heartRate")
+            }
+
+            // Emit SpO2
+            if (bloodOxygen > 0) {
+                _realTimeSpO2.emit(BloodOxygenData(timestamp, bloodOxygen, dateStr))
+                Timber.d("📤 Emitted SpO2: $bloodOxygen")
+            }
+
+            // Emit Temperature
+            if (temperature > 0f) {
+                _realTimeTemp.emit(TemperatureData(timestamp, temperature, dateStr))
+                Timber.d("📤 Emitted Temp: $temperature")
+            }
+
+            // Emit Steps (always, even if 0)
+            _realTimeSteps.emit(StepData(timestamp, steps, 0f, 0f, dateStr))
+            Timber.d("📤 Emitted Steps: $steps")
+
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error in processRealTimeData")
         }
-
-        // 2. Emit SpO2
-        if (bloodOxygen > 0) {
-            _realTimeSpO2.emit(BloodOxygenData(timestamp, bloodOxygen, dateStr))
-        }
-
-        // 3. Emit Temperature
-        if (temperature > 0) {
-            _realTimeTemp.emit(TemperatureData(timestamp, temperature, dateStr))
-        }
-
-        // 4. Emit Steps
-        _realTimeSteps.emit(StepData(timestamp, steps, 0f, 0f, dateStr))
-
-        Timber.d("⚡ Real-time emitted: HR=$heartRate, SpO2=$bloodOxygen, Steps=$steps")
     }
+
 
     // ... [Keep all your existing saveXData methods (saveHeartRateData, etc.) exactly the same] ...
     private suspend fun saveHeartRateData(dataMap: Map<String, Any>) {
@@ -321,10 +342,16 @@ class FitnessBandRepository @Inject constructor(
         }
     }
 
-    private fun initializeDevice() {
+    private suspend fun initializeDevice() {
+        Timber.d("🔧 Initializing device...")
         bleManager.writeData(sdkWrapper.setDeviceTime())
-        bleManager.writeData(sdkWrapper.enableRealTimeData(true, true)) // Important!
+
+        kotlinx.coroutines.delay(500) // Wait between commands
+
+        bleManager.writeData(sdkWrapper.enableRealTimeData(true, true))
+        Timber.d("✅ Enabled real-time data streaming")
     }
+
 
     override fun syncHistoricalData(): Flow<Resource<Boolean>> = flow {
         // ... [Keep existing implementation] ...

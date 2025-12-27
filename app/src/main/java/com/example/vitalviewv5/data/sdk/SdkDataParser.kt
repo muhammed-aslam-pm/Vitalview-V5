@@ -213,71 +213,157 @@ object SdkDataParser {
             val result = mutableListOf<HeartRateEntity>()
 
             val dicData = dataMap["dicData"]
+            Timber.d("dicData type: ${dicData?.javaClass?.name}")
+            Timber.d("dicData value: $dicData")
+
             if (dicData == null) {
                 Timber.e("❌ dicData is NULL")
                 return emptyList()
             }
 
-            val dicDataStr = dicData.toString()
-            val dates = mutableListOf<String>()
-            val heartRates = mutableListOf<Int>()
-
-            // Extract dates
-            var startIndex = 0
-            while (true) {
-                val dateIndex = dicDataStr.indexOf("date=", startIndex)
-                if (dateIndex == -1) break
-
-                val valueStart = dateIndex + 5
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
-                }
-                startIndex = valueEnd
-            }
-
-            // Extract heart rates (onceHeartValue or heartRate)
-            startIndex = 0
-            val hrKey = if (dicDataStr.contains("onceHeartValue=")) "onceHeartValue=" else "heartRate="
-            while (true) {
-                val hrIndex = dicDataStr.indexOf(hrKey, startIndex)
-                if (hrIndex == -1) break
-
-                val valueStart = hrIndex + hrKey.length
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dicDataStr.substring(valueStart, valueEnd).trim().toIntOrNull()?.let {
-                        if (it > 0) heartRates.add(it) // Filter out 0 values
+            // Handle List of Maps
+            val dataList = when (dicData) {
+                is List<*> -> {
+                    Timber.d("📋 dicData is a List with ${dicData.size} items")
+                    dicData.mapIndexedNotNull { index, item ->
+                        when (item) {
+                            is Map<*, *> -> {
+                                try {
+                                    // Try direct cast first
+                                    @Suppress("UNCHECKED_CAST")
+                                    val directCast = item as? Map<String, Any>
+                                    if (directCast != null) {
+                                        Timber.d("✅ Item #$index: Direct cast successful, keys=${directCast.keys}")
+                                        directCast
+                                    } else {
+                                        // Convert keys to strings, preserve value types
+                                        val converted = item.entries.associate { (k, v) ->
+                                            val key = k?.toString() ?: ""
+                                            val value = v ?: ""
+                                            key to value
+                                        }
+                                        Timber.d("✅ Item #$index: Converted Map, keys=${converted.keys}")
+                                        converted
+                                    }
+                                } catch (e: Exception) {
+                                    Timber.e(e, "❌ Error converting item #$index: $item")
+                                    null
+                                }
+                            }
+                            else -> {
+                                Timber.w("⚠️ List item #$index is not a Map: ${item?.javaClass?.name}, value=$item")
+                                null
+                            }
+                        }
                     }
                 }
-                startIndex = valueEnd
+                else -> {
+                    // Fallback to string parsing for backward compatibility
+                    val dicDataStr = dicData.toString()
+                    val dates = mutableListOf<String>()
+                    val heartRates = mutableListOf<Int>()
+
+                    // Extract dates
+                    var startIndex = 0
+                    while (true) {
+                        val dateIndex = dicDataStr.indexOf("date=", startIndex)
+                        if (dateIndex == -1) break
+
+                        val valueStart = dateIndex + 5
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    // Extract heart rates (onceHeartValue or heartRate)
+                    startIndex = 0
+                    val hrKey = if (dicDataStr.contains("onceHeartValue=")) "onceHeartValue=" else "heartRate="
+                    while (true) {
+                        val hrIndex = dicDataStr.indexOf(hrKey, startIndex)
+                        if (hrIndex == -1) break
+
+                        val valueStart = hrIndex + hrKey.length
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dicDataStr.substring(valueStart, valueEnd).trim().toIntOrNull()?.let {
+                                if (it > 0) heartRates.add(it) // Filter out 0 values
+                            }
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    val minSize = minOf(dates.size, heartRates.size)
+                    for (i in 0 until minSize) {
+                        try {
+                            val dateStr = dates[i].trim()
+                            val timestamp = parseTimestamp(dateStr)
+
+                            if (timestamp != null) {
+                                result.add(
+                                    HeartRateEntity(
+                                        timestamp = timestamp,
+                                        heartRate = heartRates[i],
+                                        date = dateFormatShort.format(Date(timestamp))
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "❌ Error parsing heart rate entry #$i")
+                        }
+                    }
+                    return result
+                }
             }
 
-            Timber.d("📊 Extracted ${dates.size} dates, ${heartRates.size} heart rates")
-
-            val minSize = minOf(dates.size, heartRates.size)
-            for (i in 0 until minSize) {
+            // Process List of Maps
+            Timber.d("🔄 Processing ${dataList.size} items from List")
+            for ((index, item) in dataList.withIndex()) {
                 try {
-                    val dateStr = dates[i].replace(" ", "")
-                    val timestamp = dateFormat.parse(dateStr)?.time
+                    Timber.d("📦 Item #$index: $item (type: ${item?.javaClass?.name})")
+                    Timber.d("📦 Item keys: ${item?.keys}")
 
+                    val dateStr = (item["date"] as? String)?.trim()
+                        ?: (item["date"]?.toString()?.trim())
+
+                    if (dateStr == null || dateStr.isEmpty()) {
+                        Timber.w("⚠️ No date found in item #$index: $item")
+                        continue
+                    }
+
+                    val heartRate = (item["onceHeartValue"] as? Number)?.toInt()
+                        ?: (item["onceHeartValue"]?.toString()?.toIntOrNull())
+                        ?: (item["heartRate"] as? Number)?.toInt()
+                        ?: (item["heartRate"]?.toString()?.toIntOrNull())
+
+                    if (heartRate == null || heartRate <= 0) {
+                        Timber.w("⚠️ No valid heart rate found in item #$index: $item")
+                        continue
+                    }
+
+                    Timber.d("📊 Item #$index: date=$dateStr, HR=$heartRate")
+                    val timestamp = parseTimestamp(dateStr)
                     if (timestamp != null) {
                         result.add(
                             HeartRateEntity(
                                 timestamp = timestamp,
-                                heartRate = heartRates[i],
+                                heartRate = heartRate,
                                 date = dateFormatShort.format(Date(timestamp))
                             )
                         )
+                        Timber.d("✓ Created entity #$index: HR=$heartRate at $dateStr")
+                    } else {
+                        Timber.w("⚠️ Failed to parse timestamp for date: $dateStr")
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "❌ Error parsing heart rate entry #$i")
+                    Timber.e(e, "❌ Error parsing heart rate entry #$index: $item")
                 }
             }
 
@@ -514,114 +600,208 @@ object SdkDataParser {
             val result = mutableListOf<StepDataEntity>()
 
             val dicData = dataMap["dicData"]
+            Timber.d("dicData type: ${dicData?.javaClass?.name}")
+            Timber.d("dicData value: $dicData")
+
             if (dicData == null) {
                 Timber.e("❌ dicData is NULL")
                 return emptyList()
             }
 
-            val dicDataStr = dicData.toString()
-            val dates = mutableListOf<String>()
-            val steps = mutableListOf<Int>()
-            val distances = mutableListOf<Float>()
-            val calories = mutableListOf<Float>()
-
-            // Extract dates
-            var startIndex = 0
-            while (true) {
-                val dateIndex = dicDataStr.indexOf("date=", startIndex)
-                if (dateIndex == -1) break
-
-                val valueStart = dateIndex + 5
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
-                }
-                startIndex = valueEnd
-            }
-
-            // Extract steps (allstep or step)
-            startIndex = 0
-            val stepKey = if (dicDataStr.contains("allstep=")) "allstep=" else "step="
-            while (true) {
-                val stepIndex = dicDataStr.indexOf(stepKey, startIndex)
-                if (stepIndex == -1) break
-
-                val valueStart = stepIndex + stepKey.length
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dicDataStr.substring(valueStart, valueEnd).trim().toIntOrNull()?.let {
-                        steps.add(it)
+            // Handle List of Maps
+            val dataList = when (dicData) {
+                is List<*> -> {
+                    Timber.d("📋 dicData is a List with ${dicData.size} items")
+                    dicData.mapIndexedNotNull { index, item ->
+                        when (item) {
+                            is Map<*, *> -> {
+                                try {
+                                    // Try direct cast first
+                                    @Suppress("UNCHECKED_CAST")
+                                    val directCast = item as? Map<String, Any>
+                                    if (directCast != null) {
+                                        Timber.d("✅ Item #$index: Direct cast successful, keys=${directCast.keys}")
+                                        directCast
+                                    } else {
+                                        // Convert keys to strings, preserve value types
+                                        val converted = item.entries.associate { (k, v) ->
+                                            val key = k?.toString() ?: ""
+                                            val value = v ?: ""
+                                            key to value
+                                        }
+                                        Timber.d("✅ Item #$index: Converted Map, keys=${converted.keys}")
+                                        converted
+                                    }
+                                } catch (e: Exception) {
+                                    Timber.e(e, "❌ Error converting item #$index: $item")
+                                    null
+                                }
+                            }
+                            else -> {
+                                Timber.w("⚠️ List item #$index is not a Map: ${item?.javaClass?.name}, value=$item")
+                                null
+                            }
+                        }
                     }
                 }
-                startIndex = valueEnd
-            }
+                else -> {
+                    // Fallback to string parsing for backward compatibility
+                    val dicDataStr = dicData.toString()
+                    val dates = mutableListOf<String>()
+                    val steps = mutableListOf<Int>()
+                    val distances = mutableListOf<Float>()
+                    val calories = mutableListOf<Float>()
 
-            // Extract distances
-            startIndex = 0
-            while (true) {
-                val distIndex = dicDataStr.indexOf("distance=", startIndex)
-                if (distIndex == -1) break
+                    // Extract dates
+                    var startIndex = 0
+                    while (true) {
+                        val dateIndex = dicDataStr.indexOf("date=", startIndex)
+                        if (dateIndex == -1) break
 
-                val valueStart = distIndex + 9
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
+                        val valueStart = dateIndex + 5
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
 
-                if (valueEnd != -1) {
-                    dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
-                        distances.add(it)
+                        if (valueEnd != -1) {
+                            dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
+                        }
+                        startIndex = valueEnd
                     }
-                }
-                startIndex = valueEnd
-            }
 
-            // Extract calories
-            startIndex = 0
-            val calorieKey = if (dicDataStr.contains("calorie=")) "calorie=" else "calories="
-            while (true) {
-                val calIndex = dicDataStr.indexOf(calorieKey, startIndex)
-                if (calIndex == -1) break
+                    // Extract steps (allstep or step)
+                    startIndex = 0
+                    val stepKey = if (dicDataStr.contains("allstep=")) "allstep=" else "step="
+                    while (true) {
+                        val stepIndex = dicDataStr.indexOf(stepKey, startIndex)
+                        if (stepIndex == -1) break
 
-                val valueStart = calIndex + calorieKey.length
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
+                        val valueStart = stepIndex + stepKey.length
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
 
-                if (valueEnd != -1) {
-                    dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
-                        calories.add(it)
+                        if (valueEnd != -1) {
+                            dicDataStr.substring(valueStart, valueEnd).trim().toIntOrNull()?.let {
+                                steps.add(it)
+                            }
+                        }
+                        startIndex = valueEnd
                     }
+
+                    // Extract distances
+                    startIndex = 0
+                    while (true) {
+                        val distIndex = dicDataStr.indexOf("distance=", startIndex)
+                        if (distIndex == -1) break
+
+                        val valueStart = distIndex + 9
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
+                                distances.add(it)
+                            }
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    // Extract calories
+                    startIndex = 0
+                    val calorieKey = if (dicDataStr.contains("calorie=")) "calorie=" else "calories="
+                    while (true) {
+                        val calIndex = dicDataStr.indexOf(calorieKey, startIndex)
+                        if (calIndex == -1) break
+
+                        val valueStart = calIndex + calorieKey.length
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
+                                calories.add(it)
+                            }
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    val minSize = minOf(dates.size, steps.size)
+                    for (i in 0 until minSize) {
+                        try {
+                            val dateStr = dates[i].trim()
+                            val timestamp = parseTimestamp(dateStr)
+
+                            if (timestamp != null) {
+                                result.add(
+                                    StepDataEntity(
+                                        timestamp = timestamp,
+                                        steps = steps[i],
+                                        distance = if (i < distances.size) distances[i] else 0f,
+                                        calories = if (i < calories.size) calories[i] else 0f,
+                                        date = dateFormatShort.format(Date(timestamp))
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "❌ Error parsing step entry #$i")
+                        }
+                    }
+                    return result
                 }
-                startIndex = valueEnd
             }
 
-            Timber.d("📊 Extracted ${dates.size} dates, ${steps.size} steps")
-
-            val minSize = minOf(dates.size, steps.size)
-            for (i in 0 until minSize) {
+            // Process List of Maps
+            Timber.d("🔄 Processing ${dataList.size} items from List")
+            for ((index, item) in dataList.withIndex()) {
                 try {
-                    val dateStr = dates[i].replace(" ", "")
-                    val timestamp = dateFormatShort.parse(dateStr)?.time
+                    Timber.d("📦 Item #$index: $item (type: ${item?.javaClass?.name})")
+                    Timber.d("📦 Item keys: ${item?.keys}")
 
+                    val dateStr = (item["date"] as? String)?.trim()
+                        ?: (item["date"]?.toString()?.trim())
+
+                    if (dateStr == null || dateStr.isEmpty()) {
+                        Timber.w("⚠️ No date found in item #$index: $item")
+                        continue
+                    }
+
+                    val steps = (item["allstep"] as? Number)?.toInt()
+                        ?: (item["allstep"]?.toString()?.toIntOrNull())
+                        ?: (item["step"] as? Number)?.toInt()
+                        ?: (item["step"]?.toString()?.toIntOrNull())
+                        ?: 0
+
+                    val distance = (item["distance"] as? Number)?.toFloat()
+                        ?: (item["distance"]?.toString()?.toFloatOrNull())
+                        ?: 0f
+
+                    val calories = (item["calorie"] as? Number)?.toFloat()
+                        ?: (item["calorie"]?.toString()?.toFloatOrNull())
+                        ?: (item["calories"] as? Number)?.toFloat()
+                        ?: (item["calories"]?.toString()?.toFloatOrNull())
+                        ?: 0f
+
+                    Timber.d("📊 Item #$index: date=$dateStr, steps=$steps, distance=$distance, calories=$calories")
+                    val timestamp = parseTimestamp(dateStr)
                     if (timestamp != null) {
                         result.add(
                             StepDataEntity(
                                 timestamp = timestamp,
-                                steps = steps[i],
-                                distance = if (i < distances.size) distances[i] else 0f,
-                                calories = if (i < calories.size) calories[i] else 0f,
-                                date = dateStr
+                                steps = steps,
+                                distance = distance,
+                                calories = calories,
+                                date = dateFormatShort.format(Date(timestamp))
                             )
                         )
+                        Timber.d("✓ Created entity #$index: steps=$steps at $dateStr")
+                    } else {
+                        Timber.w("⚠️ Failed to parse timestamp for date: $dateStr")
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "❌ Error parsing step entry #$i")
+                    Timber.e(e, "❌ Error parsing step entry #$index: $item")
                 }
             }
 
@@ -717,70 +897,154 @@ object SdkDataParser {
             val result = mutableListOf<TemperatureEntity>()
 
             val dicData = dataMap["dicData"]
+            Timber.d("dicData type: ${dicData?.javaClass?.name}")
+            Timber.d("dicData value: $dicData")
+
             if (dicData == null) {
                 Timber.e("❌ dicData is NULL")
                 return emptyList()
             }
 
-            val dicDataStr = dicData.toString()
-            val dates = mutableListOf<String>()
-            val temps = mutableListOf<Float>()
-
-            // Extract dates
-            var startIndex = 0
-            while (true) {
-                val dateIndex = dicDataStr.indexOf("date=", startIndex)
-                if (dateIndex == -1) break
-
-                val valueStart = dateIndex + 5
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
-                }
-                startIndex = valueEnd
-            }
-
-            // Extract temperatures
-            startIndex = 0
-            while (true) {
-                val tempIndex = dicDataStr.indexOf("temperature=", startIndex)
-                if (tempIndex == -1) break
-
-                val valueStart = tempIndex + 12
-                val valueEnd = dicDataStr.indexOf(",", valueStart).let {
-                    if (it == -1) dicDataStr.indexOf("}", valueStart) else it
-                }
-
-                if (valueEnd != -1) {
-                    dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
-                        temps.add(it)
+            // Handle List of Maps
+            val dataList = when (dicData) {
+                is List<*> -> {
+                    Timber.d("📋 dicData is a List with ${dicData.size} items")
+                    dicData.mapIndexedNotNull { index, item ->
+                        when (item) {
+                            is Map<*, *> -> {
+                                try {
+                                    // Try direct cast first
+                                    @Suppress("UNCHECKED_CAST")
+                                    val directCast = item as? Map<String, Any>
+                                    if (directCast != null) {
+                                        Timber.d("✅ Item #$index: Direct cast successful, keys=${directCast.keys}")
+                                        directCast
+                                    } else {
+                                        // Convert keys to strings, preserve value types
+                                        val converted = item.entries.associate { (k, v) ->
+                                            val key = k?.toString() ?: ""
+                                            val value = v ?: ""
+                                            key to value
+                                        }
+                                        Timber.d("✅ Item #$index: Converted Map, keys=${converted.keys}")
+                                        converted
+                                    }
+                                } catch (e: Exception) {
+                                    Timber.e(e, "❌ Error converting item #$index: $item")
+                                    null
+                                }
+                            }
+                            else -> {
+                                Timber.w("⚠️ List item #$index is not a Map: ${item?.javaClass?.name}, value=$item")
+                                null
+                            }
+                        }
                     }
                 }
-                startIndex = valueEnd
+                else -> {
+                    // Fallback to string parsing for backward compatibility
+                    val dicDataStr = dicData.toString()
+                    val dates = mutableListOf<String>()
+                    val temps = mutableListOf<Float>()
+
+                    // Extract dates
+                    var startIndex = 0
+                    while (true) {
+                        val dateIndex = dicDataStr.indexOf("date=", startIndex)
+                        if (dateIndex == -1) break
+
+                        val valueStart = dateIndex + 5
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dates.add(dicDataStr.substring(valueStart, valueEnd).trim())
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    // Extract temperatures
+                    startIndex = 0
+                    while (true) {
+                        val tempIndex = dicDataStr.indexOf("temperature=", startIndex)
+                        if (tempIndex == -1) break
+
+                        val valueStart = tempIndex + 12
+                        val valueEnd = dicDataStr.indexOf(",", valueStart).let {
+                            if (it == -1) dicDataStr.indexOf("}", valueStart) else it
+                        }
+
+                        if (valueEnd != -1) {
+                            dicDataStr.substring(valueStart, valueEnd).trim().toFloatOrNull()?.let {
+                                temps.add(it)
+                            }
+                        }
+                        startIndex = valueEnd
+                    }
+
+                    val minSize = minOf(dates.size, temps.size)
+                    for (i in 0 until minSize) {
+                        try {
+                            val dateStr = dates[i].trim()
+                            val timestamp = parseTimestamp(dateStr)
+
+                            if (timestamp != null) {
+                                result.add(
+                                    TemperatureEntity(
+                                        timestamp = timestamp,
+                                        temperature = temps[i],
+                                        date = dateFormatShort.format(Date(timestamp))
+                                    )
+                                )
+                            }
+                        } catch (e: Exception) {
+                            Timber.e(e, "❌ Error parsing temp entry #$i")
+                        }
+                    }
+                    return result
+                }
             }
 
-            Timber.d("📊 Extracted ${dates.size} dates, ${temps.size} temperatures")
-
-            val minSize = minOf(dates.size, temps.size)
-            for (i in 0 until minSize) {
+            // Process List of Maps
+            Timber.d("🔄 Processing ${dataList.size} items from List")
+            for ((index, item) in dataList.withIndex()) {
                 try {
-                    val dateStr = dates[i].replace(" ", "")
-                    val timestamp = dateFormat.parse(dateStr)?.time
+                    Timber.d("📦 Item #$index: $item (type: ${item?.javaClass?.name})")
+                    Timber.d("📦 Item keys: ${item?.keys}")
 
+                    val dateStr = (item["date"] as? String)?.trim()
+                        ?: (item["date"]?.toString()?.trim())
+
+                    if (dateStr == null || dateStr.isEmpty()) {
+                        Timber.w("⚠️ No date found in item #$index: $item")
+                        continue
+                    }
+
+                    val temperature = (item["temperature"] as? Number)?.toFloat()
+                        ?: (item["temperature"]?.toString()?.toFloatOrNull())
+
+                    if (temperature == null) {
+                        Timber.w("⚠️ No temperature found in item #$index: $item")
+                        continue
+                    }
+
+                    Timber.d("📊 Item #$index: date=$dateStr, temp=$temperature")
+                    val timestamp = parseTimestamp(dateStr)
                     if (timestamp != null) {
                         result.add(
                             TemperatureEntity(
                                 timestamp = timestamp,
-                                temperature = temps[i],
+                                temperature = temperature,
                                 date = dateFormatShort.format(Date(timestamp))
                             )
                         )
+                        Timber.d("✓ Created entity #$index: temp=$temperature at $dateStr")
+                    } else {
+                        Timber.w("⚠️ Failed to parse timestamp for date: $dateStr")
                     }
                 } catch (e: Exception) {
-                    Timber.e(e, "❌ Error parsing temp entry #$i")
+                    Timber.e(e, "❌ Error parsing temp entry #$index: $item")
                 }
             }
 
