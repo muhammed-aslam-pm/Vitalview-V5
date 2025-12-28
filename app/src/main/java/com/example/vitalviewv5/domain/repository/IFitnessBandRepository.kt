@@ -27,6 +27,10 @@ interface IFitnessBandRepository {
     fun getLatestTemperature(): Flow<TemperatureData?>
 
     fun getLatestSteps(): Flow<StepData?>
+    
+    // Battery
+    val batteryLevel: StateFlow<Int>
+    suspend fun refreshBatteryLevel()
 
     fun disconnect()
 }

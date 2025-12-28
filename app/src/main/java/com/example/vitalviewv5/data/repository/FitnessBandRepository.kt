@@ -136,6 +136,7 @@ class FitnessBandRepository @Inject constructor(
     }
 
     // ✅ FIXED: Parse and emit real-time data to the UI flows
+    // ✅ FIXED: Parse and emit real-time data to the UI flows
     private suspend fun processRealTimeData(dataMap: Map<String, Any>) {
         try {
             val dicData = dataMap["dicData"]
@@ -146,44 +147,63 @@ class FitnessBandRepository @Inject constructor(
             }
 
             Timber.d("🔍 Real-time dicData: $dicData")
-            Timber.d("🔍 Real-time dicData type: ${dicData.javaClass.name}")
+            
+            // Safe Map Access
+            val data = if (dicData is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                dicData as Map<String, Any>
+            } else {
+                Timber.w("⚠️ dicData is not a Map: ${dicData::class.java.name}")
+                return
+            }
 
-            // Parse the string representation
-            val dicDataStr = dicData.toString()
+            // Extract values safely from Map
+            fun getInt(key: String): Int = (data[key] as? Number)?.toInt() 
+                ?: (data[key]?.toString()?.toIntOrNull()) ?: 0
+                
+            fun getFloat(key: String): Float = (data[key] as? Number)?.toFloat()
+                ?: (data[key]?.toString()?.toFloatOrNull()) ?: 0f
 
-            // Extract values using regex
-            val heartRate = Regex("heartRate=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val bloodOxygen = Regex("Bloodoxygen=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-            val temperature = Regex("TempData=([\\d.]+)").find(dicDataStr)?.groupValues?.get(1)?.toFloatOrNull() ?: 0f
-            val steps = Regex("step=(\\d+)").find(dicDataStr)?.groupValues?.get(1)?.toIntOrNull() ?: 0
+            val heartRate = getInt("heartRate")
+            val bloodOxygen = getInt("Blood_oxygen").takeIf { it > 0 } ?: getInt("Bloodoxygen")
+            val temperature = getFloat("TempData")
+            val steps = getInt("step").takeIf { it > 0 } ?: getInt("allstep")
+            
+            // Check for BP just in case it's sneakily included
+            val highBP = getInt("highBP")
+            val lowBP = getInt("lowBP")
 
             val timestamp = System.currentTimeMillis()
             val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 .format(Date(timestamp))
 
-            Timber.d("⚡ Parsed real-time: HR=$heartRate, SpO2=$bloodOxygen, Temp=$temperature, Steps=$steps")
+            Timber.d("⚡ Parsed real-time: HR=$heartRate, SpO2=$bloodOxygen, Temp=$temperature, Steps=$steps, BP=$highBP/$lowBP")
 
             // Emit Heart Rate
             if (heartRate > 0) {
                 _realTimeHeartRate.emit(HeartRateData(timestamp, heartRate, dateStr))
-                Timber.d("📤 Emitted HR: $heartRate")
             }
 
             // Emit SpO2
             if (bloodOxygen > 0) {
                 _realTimeSpO2.emit(BloodOxygenData(timestamp, bloodOxygen, dateStr))
-                Timber.d("📤 Emitted SpO2: $bloodOxygen")
             }
 
             // Emit Temperature
             if (temperature > 0f) {
                 _realTimeTemp.emit(TemperatureData(timestamp, temperature, dateStr))
-                Timber.d("📤 Emitted Temp: $temperature")
             }
 
-            // Emit Steps (always, even if 0)
+            // Emit Steps
             _realTimeSteps.emit(StepData(timestamp, steps, 0f, 0f, dateStr))
-            Timber.d("📤 Emitted Steps: $steps")
+            
+            // Emit BP if available (even if not standard in Type 23)
+            if (highBP > 0 && lowBP > 0) {
+                 _realTimeBloodPressure.emit(
+                    BloodPressureData(timestamp, highBP, lowBP, heartRate, dateStr)
+                )
+                Timber.d("📤 Emitted Real-time BP: $highBP/$lowBP")
+            }
 
         } catch (e: Exception) {
             Timber.e(e, "❌ Error in processRealTimeData")
@@ -313,7 +333,45 @@ class FitnessBandRepository @Inject constructor(
         }
     }
 
-    private fun processBatteryData(dataMap: Map<String, Any>) { /* Keep existing */ }
+    override val batteryLevel = MutableStateFlow(-1)
+    
+    override suspend fun refreshBatteryLevel() {
+        try {
+            val cmd = sdkWrapper.getBatteryLevel()
+            bleManager.writeData(cmd)
+            Timber.d("Requested battery level")
+        } catch (e: Exception) {
+            Timber.e(e, "Failed to request battery level")
+        }
+    }
+
+    private fun processBatteryData(dataMap: Map<String, Any>) {
+        try {
+            val dicData = dataMap["dicData"]
+            if (dicData == null) return
+
+            val data = if (dicData is Map<*, *>) {
+                @Suppress("UNCHECKED_CAST")
+                dicData as Map<String, Any>
+            } else {
+                 return
+            }
+
+            val level = (data["batteryLevel"] as? Number)?.toInt() 
+                ?: (data["batteryLevel"]?.toString()?.toIntOrNull()) 
+                ?: -1
+
+            if (level >= 0) {
+                 repositoryScope.launch {
+                     batteryLevel.emit(level)
+                 }
+                 Timber.d("🔋 Battery Level updated: $level%")
+            }
+        } catch (e: Exception) {
+             Timber.e(e, "Error parsing battery data")
+        }
+    }
+    
     private fun processVersionData(dataMap: Map<String, Any>) { /* Keep existing */ }
     private fun processMacAddress(dataMap: Map<String, Any>) { /* Keep existing */ }
 
@@ -347,6 +405,9 @@ class FitnessBandRepository @Inject constructor(
         bleManager.writeData(sdkWrapper.setDeviceTime())
 
         kotlinx.coroutines.delay(500) // Wait between commands
+        
+        refreshBatteryLevel()
+        kotlinx.coroutines.delay(500)
 
         bleManager.writeData(sdkWrapper.enableRealTimeData(true, true))
         Timber.d("✅ Enabled real-time data streaming")
@@ -434,5 +495,6 @@ class FitnessBandRepository @Inject constructor(
     override fun disconnect() {
         bleManager.disconnect()
         _connectionState.value = BleManager.ConnectionState.Disconnected
+        batteryLevel.value = -1
     }
 }

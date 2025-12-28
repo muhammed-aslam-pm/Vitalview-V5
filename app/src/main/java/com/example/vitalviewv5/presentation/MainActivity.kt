@@ -140,10 +140,17 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                // Battery Level
+                launch {
+                    viewModel.batteryLevel.collect { level ->
+                        binding.tvBatteryLevel.text = if (level >= 0) "Battery: $level%" else "Battery: --%"
+                    }
+                }
+
                 // Scanning state
                 launch {
                     viewModel.isScanning.collect { isScanning ->
-                        binding.btnScan.text = if (isScanning) "Stop Scan" else "Scan Devices"
+                        binding.btnScan.text = if (isScanning) "Stop Scan" else "Find Devices"
                         binding.progressBar.visibility = if (isScanning)
                             View.VISIBLE else View.GONE
                     }
@@ -153,7 +160,7 @@ class MainActivity : AppCompatActivity() {
                 launch {
                     viewModel.isSyncing.collect { isSyncing ->
                         binding.btnSync.isEnabled = !isSyncing
-                        binding.btnSync.text = if (isSyncing) "Syncing..." else "Sync Data"
+                        binding.btnSync.text = if (isSyncing) "Syncing..." else "Sync All Health Data"
                     }
                 }
             }
@@ -181,8 +188,12 @@ class MainActivity : AppCompatActivity() {
         when (state) {
             is BleManager.ConnectionState.Disconnected -> {
                 binding.tvConnectionStatus.text = "Disconnected"
-                binding.layoutDeviceList.visibility = android.view.View.VISIBLE
-                binding.layoutHealthData.visibility = android.view.View.GONE
+                binding.tvConnectionStatus.setBackgroundResource(R.drawable.bg_status_chip) // Reset or set red
+                // Ideally create a specific red/green drawable or use tint, but keeping simple for now
+                binding.layoutDeviceList.visibility = View.VISIBLE
+                binding.layoutHealthData.visibility = View.GONE
+                binding.layoutActions.visibility = View.GONE
+                binding.tvBatteryLevel.visibility = View.GONE
             }
             is BleManager.ConnectionState.Connecting -> {
                 binding.tvConnectionStatus.text = "Connecting..."
@@ -191,9 +202,11 @@ class MainActivity : AppCompatActivity() {
                 binding.tvConnectionStatus.text = "Connected"
             }
             is BleManager.ConnectionState.Ready -> {
-                binding.tvConnectionStatus.text = "Ready"
-                binding.layoutDeviceList.visibility = android.view.View.GONE
-                binding.layoutHealthData.visibility = android.view.View.VISIBLE
+                binding.tvConnectionStatus.text = "Connected" // "Ready" might confuse users, "Connected" is friendlier
+                binding.layoutDeviceList.visibility = View.GONE
+                binding.layoutHealthData.visibility = View.VISIBLE
+                binding.layoutActions.visibility = View.VISIBLE
+                binding.tvBatteryLevel.visibility = View.VISIBLE
             }
         }
     }

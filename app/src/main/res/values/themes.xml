@@ -2,8 +2,34 @@
     <!-- Base application theme. -->
     <style name="Base.Theme.VitalviewV5" parent="Theme.Material3.DayNight.NoActionBar">
         <!-- Customize your light theme here. -->
-        <!-- <item name="colorPrimary">@color/my_light_primary</item> -->
+        <item name="android:statusBarColor">@color/background_dark</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowBackground">@color/background_dark</item>
+        <item name="colorPrimary">@color/primary_brand</item>
+        <item name="colorSecondary">@color/secondary_brand</item>
     </style>
 
     <style name="Theme.VitalviewV5" parent="Base.Theme.VitalviewV5" />
+    
+    <style name="DashboardCard">
+        <item name="cardBackgroundColor">@color/surface_dark</item>
+        <item name="cardCornerRadius">24dp</item>
+        <item name="cardElevation">0dp</item>
+        <item name="android:layout_margin">8dp</item>
+        <item name="strokeColor">@color/divider</item>
+        <item name="strokeWidth">1dp</item>
+    </style>
+
+    <style name="DashboardTextLabel">
+        <item name="android:textSize">14sp</item>
+        <item name="android:textColor">@color/text_secondary</item>
+        <item name="android:fontFamily">sans-serif-medium</item>
+    </style>
+
+    <style name="DashboardTextValue">
+        <item name="android:textSize">28sp</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:fontFamily">sans-serif-black</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
 </resources>

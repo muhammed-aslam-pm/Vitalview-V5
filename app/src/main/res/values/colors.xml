@@ -1,5 +1,23 @@
-<?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Modern Dark Theme Palette -->
+    <color name="background_dark">#0F172A</color>
+    <color name="surface_dark">#1E293B</color>
+    <color name="primary_brand">#0EA5E9</color> <!-- Sky Blue -->
+    <color name="secondary_brand">#6366F1</color> <!-- Indigo -->
+    
+    <color name="text_primary">#F8FAFC</color>
+    <color name="text_secondary">#94A3B8</color>
+    <color name="divider">#334155</color>
+
+    <!-- Health Metric Colors -->
+    <color name="heart_rate_color">#EF4444</color> <!-- Red -->
+    <color name="spo2_color">#06B6D4</color> <!-- Cyan -->
+    <color name="bp_color">#A855F7</color> <!-- Purple -->
+    <color name="temp_color">#F97316</color> <!-- Orange -->
+    <color name="steps_color">#10B981</color> <!-- Emerald -->
+
+    <!-- Basic Colors -->
     <color name="black">#FF000000</color>
     <color name="white">#FFFFFFFF</color>
+    <color name="transparent">#00000000</color>
 </resources>

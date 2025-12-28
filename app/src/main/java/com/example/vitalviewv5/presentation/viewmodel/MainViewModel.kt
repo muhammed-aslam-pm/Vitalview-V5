@@ -46,6 +46,9 @@ class MainViewModel @Inject constructor(
     private val _isSyncing = MutableStateFlow(false)
     val isSyncing: StateFlow<Boolean> = _isSyncing.asStateFlow()
 
+    private val _batteryLevel = MutableStateFlow(-1)
+    val batteryLevel: StateFlow<Int> = _batteryLevel.asStateFlow()
+
     init {
         observeConnectionState()
         observeHealthData()
@@ -94,6 +97,12 @@ class MainViewModel @Inject constructor(
                 _steps.value = data
             }
         }
+        
+        viewModelScope.launch {
+            repository.batteryLevel.collect { level ->
+                 _batteryLevel.value = level
+            }
+        }
     }
 
     fun startScan() {
@@ -107,13 +116,21 @@ class MainViewModel @Inject constructor(
                         resource.data?.let { results ->
                             val currentList = _scanResults.value.toMutableList()
                             results.forEach { newResult ->
-                                val existingIndex = currentList.indexOfFirst {
-                                    it.device.address == newResult.device.address
-                                }
-                                if (existingIndex >= 0) {
-                                    currentList[existingIndex] = newResult
-                                } else {
-                                    currentList.add(newResult)
+                                try {
+                                    val deviceName = newResult.device.name ?: ""
+                                    // User requested filtering for "JCV5" devices
+                                    if (deviceName.contains("JCV5", ignoreCase = true)) {
+                                        val existingIndex = currentList.indexOfFirst {
+                                            it.device.address == newResult.device.address
+                                        }
+                                        if (existingIndex >= 0) {
+                                            currentList[existingIndex] = newResult
+                                        } else {
+                                            currentList.add(newResult)
+                                        }
+                                    }
+                                } catch (e: SecurityException) {
+                                    Timber.e(e, "Error accessing device name for filtering")
                                 }
                             }
                             _scanResults.value = currentList
