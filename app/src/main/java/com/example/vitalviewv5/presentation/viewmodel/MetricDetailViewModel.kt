@@ -11,7 +11,10 @@ import kotlinx.coroutines.launch
 import timber.log.Timber
 import java.text.SimpleDateFormat
 import java.util.Locale
+
 import javax.inject.Inject
+import com.example.vitalviewv5.domain.model.SpotMeasurementType
+import com.example.vitalviewv5.util.Resource
 
 @HiltViewModel
 class MetricDetailViewModel @Inject constructor(
@@ -34,6 +37,13 @@ class MetricDetailViewModel @Inject constructor(
     // Average or latest value
     private val _summaryValue = MutableStateFlow("")
     val summaryValue: StateFlow<String> = _summaryValue.asStateFlow()
+    
+    // Measurement State
+    private val _isMeasuring = MutableStateFlow(false)
+    val isMeasuring: StateFlow<Boolean> = _isMeasuring.asStateFlow()
+
+    private val _measureMessage = MutableStateFlow<String?>(null)
+    val measureMessage: StateFlow<String?> = _measureMessage.asStateFlow()
 
     fun loadMetric(metricType: String) {
         _metricName.value = metricType
@@ -45,7 +55,31 @@ class MetricDetailViewModel @Inject constructor(
                 "Blood Pressure" -> loadBloodPressure()
                 "Temperature" -> loadTemperature()
                 "Steps" -> loadSteps()
+                "Sleep" -> loadSleep()
             }
+        }
+    }
+
+    fun startMeasurement() {
+        val type = when (_metricName.value) {
+            "Heart Rate" -> SpotMeasurementType.HEART_RATE
+            "SpO2" -> SpotMeasurementType.SPO2
+            else -> return
+        }
+
+        viewModelScope.launch {
+            _isMeasuring.value = true
+            _measureMessage.value = null
+            
+            val result = repository.startSpotMeasurement(type)
+            when (result) {
+                is Resource.Success -> _measureMessage.value = "Measurement started successfully"
+                is Resource.Error -> _measureMessage.value = "Failed: ${result.message}"
+                else -> {}
+            }
+            // Reset measuring state after a delay or immediately if just a trigger
+            kotlinx.coroutines.delay(2000)
+            _isMeasuring.value = false
         }
     }
 
@@ -113,6 +147,34 @@ class MetricDetailViewModel @Inject constructor(
              if (points.isNotEmpty()) {
                 val total = points.sumOf { it.value.toDouble() }.toInt()
                 _summaryValue.value = "$total Steps (Total)"
+            }
+        }
+    }
+
+    private suspend fun loadSleep() {
+        repository.getSleepHistory().collect { list ->
+            // For Graph: Map Sleep Levels to values 
+            // 0: Deep, 1: Light, 2: Awake, 3: REM
+            // We can visualize this on the Y-axis.
+            val points = list.sortedBy { it.timestamp }.map { 
+                val yVal = when(it.sleepLevel) {
+                    com.example.vitalviewv5.domain.model.SleepLevel.DEEP_SLEEP -> 0f
+                    com.example.vitalviewv5.domain.model.SleepLevel.LIGHT_SLEEP -> 1f
+                    com.example.vitalviewv5.domain.model.SleepLevel.REM -> 2f
+                    com.example.vitalviewv5.domain.model.SleepLevel.AWAKE -> 3f
+                }
+                HistoryPoint(yVal, it.timestamp, "${it.sleepLevel} - ${it.date}")
+            }
+            _historyData.value = points
+             if (points.isNotEmpty()) {
+                 // Calculate total sleep duration (count of records * unit length?)
+                 // Assuming 1 record is 1 unit (e.g. 1 minute or 5 minutes?) 
+                 // Actually the records are usually per minute if using mode 1
+                 // Let's just show count of records as minutes approx for now for Summary
+                 val totalMinutes = list.size // This is rough approximation as records might be 5 mins
+                 val hours = list.size / 60
+                 val mins = list.size % 60
+                 _summaryValue.value = "${hours}h ${mins}m (Approx)"
             }
         }
     }

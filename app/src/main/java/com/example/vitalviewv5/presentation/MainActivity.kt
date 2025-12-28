@@ -140,6 +140,14 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
 
+                // ✅ Sleep
+                launch {
+                    viewModel.sleepDuration.collect { duration ->
+                        Timber.d("🔄 UI updating sleep: $duration")
+                        binding.tvSleep.text = duration
+                    }
+                }
+
                 // Battery Level
                 launch {
                     viewModel.batteryLevel.collect { level ->
@@ -188,6 +196,7 @@ class MainActivity : AppCompatActivity() {
         binding.cardBloodPressure.setOnClickListener { openDetail("Blood Pressure") }
         binding.cardTemperature.setOnClickListener { openDetail("Temperature") }
         binding.cardSteps.setOnClickListener { openDetail("Steps") }
+        binding.cardSleep.setOnClickListener { openDetail("Sleep") }
     }
 
     private fun openDetail(metricName: String) {

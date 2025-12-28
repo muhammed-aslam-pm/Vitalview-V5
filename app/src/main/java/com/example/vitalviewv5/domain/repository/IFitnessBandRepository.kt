@@ -4,6 +4,7 @@ import android.bluetooth.BluetoothDevice
 import android.bluetooth.le.ScanResult
 import com.example.vitalviewv5.data.ble.BleManager
 import com.example.vitalviewv5.domain.model.*
+import com.example.vitalviewv5.domain.model.SpotMeasurementType
 import com.example.vitalviewv5.util.Resource
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
@@ -36,6 +37,9 @@ interface IFitnessBandRepository {
     fun getBloodPressureHistory(): Flow<List<BloodPressureData>>
     fun getTemperatureHistory(): Flow<List<TemperatureData>>
     fun getStepsHistory(): Flow<List<StepData>>
+    fun getSleepHistory(): Flow<List<SleepData>>
+
+    suspend fun startSpotMeasurement(type: SpotMeasurementType): Resource<Boolean>
 
     // Battery
     val batteryLevel: StateFlow<Int>

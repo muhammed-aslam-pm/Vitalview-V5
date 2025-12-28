@@ -207,6 +207,86 @@ object SdkDataParser {
         }
     }
 
+    fun parseSleepData(dataMap: Map<String, Any>): List<SleepDataEntity> {
+        return try {
+            Timber.d("▶ parseSleepData STARTED")
+            val result = mutableListOf<SleepDataEntity>()
+
+            val dicData = dataMap["dicData"]
+            if (dicData == null) return emptyList()
+
+            // Sleep parsing is often complex because it comes as a List of Maps
+            val dataList = when (dicData) {
+                is List<*> -> dicData
+                else -> return emptyList()
+            }
+
+            for (item in dataList) {
+                if (item !is Map<*, *>) continue
+                
+                // Get Date
+                val dateStr = (item["date"] as? String)?.trim() ?: continue
+                val startTime = parseTimestamp(dateStr) ?: continue
+                
+                // Get Unit Length
+                val sleepUnitLength = (item["sleepUnitLength"] as? Number)?.toInt() 
+                    ?: (item["sleepUnitLength"]?.toString()?.toIntOrNull()) ?: 1
+                
+                // Get Array String
+                val arrayStr = (item["arraySleepQuality"] as? String)?.trim() ?: continue
+                val values = arrayStr.split(" ").mapNotNull { it.toIntOrNull() }
+                
+                // Parse each value
+                var currentTime = startTime
+                // If unit=1, each value is 1 min. If unit=5, each value is 5 min.
+                val intervalMillis = sleepUnitLength * 60 * 1000L 
+
+                for (value in values) {
+                    val levelCode = if (sleepUnitLength == 1) {
+                         when (value.toFloat()) {
+                            1f -> 0 // Deep
+                            2f -> 1 // Light
+                            3f -> 3 // REM
+                            else -> 2 // Awake
+                        }
+                    } else {
+                        val v = value.toFloat()
+                        when {
+                            v >= 0 && v <= 2f -> 0 // Deep
+                            v > 2f && v <= 8f -> 1 // Light
+                            v > 8f && v <= 20f -> 3 // REM
+                            else -> 2 // Awake
+                        }
+                    }
+                    
+                    val levelStr = when (levelCode) {
+                        0 -> "DEEP_SLEEP"
+                        1 -> "LIGHT_SLEEP"
+                        3 -> "REM"
+                        else -> "AWAKE"
+                    }
+
+                    result.add(
+                        SleepDataEntity(
+                            timestamp = currentTime,
+                            date = dateFormatShort.format(Date(currentTime)),
+                            sleepValue = value,
+                            sleepLevel = levelStr
+                        )
+                    )
+                    
+                    currentTime += intervalMillis
+                }
+            }
+            
+            Timber.d("✅ Successfully parsed ${result.size} sleep records")
+            result
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Error parsing sleep data")
+            emptyList()
+        }
+    }
+
     fun parseHeartRateData(dataMap: Map<String, Any>): List<HeartRateEntity> {
         return try {
             Timber.d("▶ parseHeartRateData STARTED")
@@ -813,82 +893,7 @@ object SdkDataParser {
         }
     }
 
-    fun parseSleepData(dataMap: Map<String, Any>): List<SleepDataEntity> {
-        return try {
-            Timber.d("▶ parseSleepData STARTED")
-            val result = mutableListOf<SleepDataEntity>()
 
-            val dicData = dataMap["dicData"]
-            if (dicData == null) {
-                Timber.e("❌ dicData is NULL")
-                return emptyList()
-            }
-
-            val dicDataStr = dicData.toString()
-
-            // Extract date
-            val dateMatch = Regex("date=([^,}]+)").find(dicDataStr)
-            val dateStr = dateMatch?.groupValues?.get(1)?.trim()
-            if (dateStr == null) {
-                Timber.e("❌ No date found")
-                return emptyList()
-            }
-
-            // Extract sleepUnitLength
-            val unitMatch = Regex("sleepUnitLength=(\\d+)").find(dicDataStr)
-            val unitLength = unitMatch?.groupValues?.get(1)?.toIntOrNull() ?: 1
-
-            // Extract arraySleepQuality
-            val qualityMatch = Regex("arraySleepQuality=([^}]+)").find(dicDataStr)
-            val qualityStr = qualityMatch?.groupValues?.get(1)?.trim()
-            if (qualityStr == null) {
-                Timber.e("❌ No arraySleepQuality found")
-                return emptyList()
-            }
-
-            val qualities = qualityStr.split("\\s+".toRegex())
-                .mapNotNull { it.toIntOrNull() }
-
-            Timber.d("📊 Date=$dateStr, unitLength=$unitLength, ${qualities.size} values")
-
-            try {
-                val startDate = dateFormat.parse(dateStr.replace(" ", ""))
-                if (startDate != null) {
-                    qualities.forEachIndexed { index, quality ->
-                        val timestamp = startDate.time + (index * unitLength * 60 * 1000L)
-
-                        // Map quality value to sleep level name
-                        val levelName = when (quality) {
-                            1 -> "DEEP_SLEEP"
-                            2 -> "LIGHT_SLEEP"
-                            3 -> "AWAKE"
-                            5 -> "REM"
-                            else -> null
-                        }
-
-                        levelName?.let {
-                            result.add(
-                                SleepDataEntity(
-                                    timestamp = timestamp,
-                                    date = dateFormatShort.format(Date(timestamp)),
-                                    sleepValue = quality,  // Original numeric value from device
-                                    sleepLevel = levelName  // Human-readable level name as String
-                                )
-                            )
-                        }
-                    }
-                }
-            } catch (e: Exception) {
-                Timber.e(e, "❌ Error parsing sleep date")
-            }
-
-            Timber.d("✅ Successfully parsed ${result.size} sleep records")
-            result
-        } catch (e: Exception) {
-            Timber.e(e, "💥 FATAL ERROR in parseSleepData")
-            emptyList()
-        }
-    }
 
 
     fun parseTemperatureData(dataMap: Map<String, Any>): List<TemperatureEntity> {

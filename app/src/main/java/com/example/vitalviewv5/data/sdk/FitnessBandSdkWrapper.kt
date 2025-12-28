@@ -103,4 +103,9 @@ class FitnessBandSdkWrapper @Inject constructor(
     fun getSleepHistory(mode: Byte, lastDate: String?): ByteArray = try { BleSDK.GetDetailSleepDataWithMode(mode, lastDate ?: "") } catch (e: Exception) { Timber.e(e, "Error"); byteArrayOf() }
     fun getStepHistory(mode: Byte, lastDate: String?): ByteArray = try { BleSDK.GetTotalActivityDataWithMode(mode, lastDate ?: "") } catch (e: Exception) { Timber.e(e, "Error"); byteArrayOf() }
     fun getTemperatureHistory(mode: Byte, lastDate: String?): ByteArray = try { BleSDK.GetTemperature_historyData(mode, lastDate ?: "") } catch (e: Exception) { Timber.e(e, "Error"); byteArrayOf() }
+
+    
+    // Spot Measurement (AutoTestMode)
+    fun setDeviceMeasurementWithType(mode: AutoTestMode, seconds: Long, open: Boolean): ByteArray = 
+        try { BleSDK.SetDeviceMeasurementWithType(mode, seconds, open) } catch (e: Exception) { Timber.e(e, "Error"); byteArrayOf() }
 }

@@ -10,7 +10,10 @@ import com.example.vitalviewv5.presentation.adapter.HistoryAdapter
 import com.example.vitalviewv5.presentation.viewmodel.MetricDetailViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import android.view.View
+import android.widget.Toast
 
 @AndroidEntryPoint
 class MetricDetailActivity : AppCompatActivity() {
@@ -42,12 +45,23 @@ class MetricDetailActivity : AppCompatActivity() {
             layoutManager = LinearLayoutManager(this@MetricDetailActivity)
             adapter = historyAdapter
         }
+
+        binding.btnMeasureNow.setOnClickListener {
+            viewModel.startMeasurement()
+        }
     }
 
     private fun setupObservers() {
         lifecycleScope.launch {
             viewModel.metricName.collectLatest { name ->
                 binding.tvTitle.text = name
+                
+                // Show Measure button only for Heart Rate and SpO2
+                if (name == "Heart Rate" || name == "SpO2") {
+                    binding.layoutAction.visibility = View.VISIBLE
+                } else {
+                    binding.layoutAction.visibility = View.GONE
+                }
             }
         }
 
@@ -65,6 +79,23 @@ class MetricDetailActivity : AppCompatActivity() {
         lifecycleScope.launch {
             viewModel.summaryValue.collectLatest { value ->
                 binding.tvSummaryValue.text = value
+            }
+        }
+
+
+        lifecycleScope.launch {
+            viewModel.isMeasuring.collectLatest { isMeasuring ->
+                binding.btnMeasureNow.isEnabled = !isMeasuring
+                binding.btnMeasureNow.text = if (isMeasuring) "Measuring..." else "Measure Now"
+                binding.progressBarAction.visibility = if (isMeasuring) View.VISIBLE else View.GONE
+            }
+        }
+
+        lifecycleScope.launch {
+            viewModel.measureMessage.collectLatest { msg ->
+                msg?.let {
+                    Toast.makeText(this@MetricDetailActivity, it, Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

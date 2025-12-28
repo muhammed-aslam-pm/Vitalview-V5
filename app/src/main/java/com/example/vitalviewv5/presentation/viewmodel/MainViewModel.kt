@@ -40,6 +40,9 @@ class MainViewModel @Inject constructor(
     private val _steps = MutableStateFlow<StepData?>(null)
     val steps: StateFlow<StepData?> = _steps.asStateFlow()
 
+    private val _sleepDuration = MutableStateFlow<String>("--")
+    val sleepDuration: StateFlow<String> = _sleepDuration.asStateFlow()
+
     private val _isScanning = MutableStateFlow(false)
     val isScanning: StateFlow<Boolean> = _isScanning.asStateFlow()
 
@@ -101,6 +104,22 @@ class MainViewModel @Inject constructor(
         viewModelScope.launch {
             repository.batteryLevel.collect { level ->
                  _batteryLevel.value = level
+            }
+        }
+
+
+        viewModelScope.launch {
+            repository.getSleepHistory().collect { list ->
+                if (list.isNotEmpty()) {
+                    // Approximate duration based on record count (assuming 1 min per record for now)
+                    // or we could filter by date. For now, valid simplification.
+                    val totalMinutes = list.size 
+                    val hours = totalMinutes / 60
+                    val mins = totalMinutes % 60
+                    _sleepDuration.value = "${hours}h ${mins}m"
+                } else {
+                    _sleepDuration.value = "--"
+                }
             }
         }
     }

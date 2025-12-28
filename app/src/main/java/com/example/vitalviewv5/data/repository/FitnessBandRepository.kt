@@ -1,11 +1,14 @@
 package com.example.vitalviewv5.data.repository
 
 import com.example.vitalviewv5.data.ble.BleManager
+
 import com.example.vitalviewv5.data.local.FitnessBandDatabase
 import com.example.vitalviewv5.data.sdk.FitnessBandSdkWrapper
 import com.example.vitalviewv5.data.sdk.SdkDataParser
 import com.example.vitalviewv5.data.local.entity.*
 import com.example.vitalviewv5.domain.model.*
+import com.example.vitalviewv5.domain.model.SpotMeasurementType
+import com.jstyle.blesdk2436.model.AutoTestMode
 import com.example.vitalviewv5.domain.repository.IFitnessBandRepository
 import com.example.vitalviewv5.util.Resource
 import kotlinx.coroutines.CoroutineScope
@@ -312,9 +315,18 @@ class FitnessBandRepository @Inject constructor(
 
     private suspend fun saveSleepData(dataMap: Map<String, Any>) {
         try {
+            Timber.d("💾 saveSleepData called")
             val entities = SdkDataParser.parseSleepData(dataMap)
-            if (entities.isNotEmpty()) database.sleepDataDao().insertAll(entities)
-        } catch (e: Exception) { Timber.e(e) }
+            Timber.d("📦 Parsed ${entities.size} sleep entities")
+            if (entities.isNotEmpty()) {
+                database.sleepDataDao().insertAll(entities)
+                Timber.d("✅ Inserted ${entities.size} sleep records into database")
+            } else {
+                Timber.w("⚠️ No sleep entities to save")
+            }
+        } catch (e: Exception) { 
+            Timber.e(e, "❌ Error saving sleep data")
+        }
     }
 
     private suspend fun saveStepData(dataMap: Map<String, Any>) {
@@ -448,7 +460,11 @@ class FitnessBandRepository @Inject constructor(
             kotlinx.coroutines.delay(1000)
             bleManager.writeData(sdkWrapper.getHRVHistory(0, null)) // BP comes here
             kotlinx.coroutines.delay(1000)
-            // ... (rest of your sync logic)
+            bleManager.writeData(sdkWrapper.getSleepHistory(0, null))
+            kotlinx.coroutines.delay(1000)
+            bleManager.writeData(sdkWrapper.getStepHistory(0, null))
+            kotlinx.coroutines.delay(1000)
+            bleManager.writeData(sdkWrapper.getTemperatureHistory(0, null))
             emit(Resource.Success(true))
         } catch (e: Exception) {
             emit(Resource.Error(e.message ?: "Sync failed"))
@@ -559,6 +575,31 @@ class FitnessBandRepository @Inject constructor(
                 StepData(it.timestamp, it.steps, it.distance, it.calories, dateStr)
             }
         }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getSleepHistory(): Flow<List<SleepData>> {
+        return database.sleepDataDao().getRecentSleep().map { entities ->
+            entities.map {
+                SleepData(it.timestamp, it.date, it.sleepValue, SleepLevel.valueOf(it.sleepLevel))
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+    
+    override suspend fun startSpotMeasurement(type: SpotMeasurementType): Resource<Boolean> {
+        return try {
+            val mode = when(type) {
+                SpotMeasurementType.HEART_RATE -> AutoTestMode.AutoHeartRate
+                SpotMeasurementType.SPO2 -> AutoTestMode.AutoSpo2
+            }
+            // Start measurement for 30 seconds
+            val cmd = sdkWrapper.setDeviceMeasurementWithType(mode, 30, true)
+            bleManager.writeData(cmd)
+            Timber.d("🚀 Started spot measurement: $type")
+            Resource.Success(true)
+        } catch (e: Exception) {
+            Timber.e(e, "❌ Failed to start spot measurement")
+            Resource.Error(e.message ?: "Failed to start measurement")
+        }
     }
 
     override fun disconnect() {
