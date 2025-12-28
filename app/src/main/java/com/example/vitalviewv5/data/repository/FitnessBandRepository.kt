@@ -4,6 +4,7 @@ import com.example.vitalviewv5.data.ble.BleManager
 import com.example.vitalviewv5.data.local.FitnessBandDatabase
 import com.example.vitalviewv5.data.sdk.FitnessBandSdkWrapper
 import com.example.vitalviewv5.data.sdk.SdkDataParser
+import com.example.vitalviewv5.data.local.entity.*
 import com.example.vitalviewv5.domain.model.*
 import com.example.vitalviewv5.domain.repository.IFitnessBandRepository
 import com.example.vitalviewv5.util.Resource
@@ -137,6 +138,7 @@ class FitnessBandRepository @Inject constructor(
 
     // ✅ FIXED: Parse and emit real-time data to the UI flows
     // ✅ FIXED: Parse and emit real-time data to the UI flows
+    // ✅ FIXED: Parse and emit real-time data to the UI flows AND save to database for history
     private suspend fun processRealTimeData(dataMap: Map<String, Any>) {
         try {
             val dicData = dataMap["dicData"]
@@ -168,6 +170,8 @@ class FitnessBandRepository @Inject constructor(
             val bloodOxygen = getInt("Blood_oxygen").takeIf { it > 0 } ?: getInt("Bloodoxygen")
             val temperature = getFloat("TempData")
             val steps = getInt("step").takeIf { it > 0 } ?: getInt("allstep")
+            val distance = getFloat("distance")
+            val calories = getFloat("calories")
             
             // Check for BP just in case it's sneakily included
             val highBP = getInt("highBP")
@@ -177,32 +181,52 @@ class FitnessBandRepository @Inject constructor(
             val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
                 .format(Date(timestamp))
 
-            Timber.d("⚡ Parsed real-time: HR=$heartRate, SpO2=$bloodOxygen, Temp=$temperature, Steps=$steps, BP=$highBP/$lowBP")
+            Timber.d("⚡ Parsed real-time: HR=$heartRate, SpO2=$bloodOxygen, Temp=$temperature, Steps=$steps, BP=$highBP/$lowBP, Dist=$distance, Cal=$calories")
 
-            // Emit Heart Rate
+            // Emit Heart Rate & Save
             if (heartRate > 0) {
                 _realTimeHeartRate.emit(HeartRateData(timestamp, heartRate, dateStr))
+                database.heartRateDao().insert(
+                    HeartRateEntity(timestamp = timestamp, heartRate = heartRate, date = dateStr)
+                )
             }
 
-            // Emit SpO2
+            // Emit SpO2 & Save
             if (bloodOxygen > 0) {
                 _realTimeSpO2.emit(BloodOxygenData(timestamp, bloodOxygen, dateStr))
+                database.bloodOxygenDao().insert(
+                    BloodOxygenEntity(timestamp = timestamp, spo2 = bloodOxygen, date = dateStr)
+                )
             }
 
-            // Emit Temperature
+            // Emit Temperature & Save
             if (temperature > 0f) {
                 _realTimeTemp.emit(TemperatureData(timestamp, temperature, dateStr))
+                database.temperatureDao().insert(
+                    TemperatureEntity(timestamp = timestamp, temperature = temperature, date = dateStr)
+                )
             }
 
-            // Emit Steps
-            _realTimeSteps.emit(StepData(timestamp, steps, 0f, 0f, dateStr))
+            // Emit Steps & Save
+            // Save even if steps are 0 if we want to track intervals? But mostly interest in movement.
+            // But real-time might send 0 if idle. Let's save if valid or if we want continuous timeline.
+            // For now, save if any value is present.
+            if (steps > 0 || distance > 0f || calories > 0f) {
+                _realTimeSteps.emit(StepData(timestamp, steps, distance, calories, dateStr))
+                database.stepDataDao().insert(
+                    StepDataEntity(timestamp = timestamp, steps = steps, distance = distance, calories = calories, date = dateStr)
+                )
+            }
             
-            // Emit BP if available (even if not standard in Type 23)
+            // Emit BP if available & Save
             if (highBP > 0 && lowBP > 0) {
                  _realTimeBloodPressure.emit(
                     BloodPressureData(timestamp, highBP, lowBP, heartRate, dateStr)
                 )
-                Timber.d("📤 Emitted Real-time BP: $highBP/$lowBP")
+                database.bloodPressureDao().insert(
+                    BloodPressureEntity(timestamp = timestamp, systolic = highBP, diastolic = lowBP, heartRate = heartRate, date = dateStr)
+                )
+                Timber.d("📤 Emitted & Saved Real-time BP: $highBP/$lowBP")
             }
 
         } catch (e: Exception) {
