@@ -16,4 +16,7 @@ interface BloodPressureDao {
 
     @Query("SELECT * FROM blood_pressure WHERE date = :date ORDER BY timestamp DESC")
     fun getByDate(date: String): Flow<List<BloodPressureEntity>>
+
+    @Query("SELECT * FROM blood_pressure ORDER BY timestamp DESC")
+    fun getAll(): Flow<List<BloodPressureEntity>>
 }

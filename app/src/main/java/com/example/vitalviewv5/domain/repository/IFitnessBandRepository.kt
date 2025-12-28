@@ -28,6 +28,15 @@ interface IFitnessBandRepository {
 
     fun getLatestSteps(): Flow<StepData?>
     
+
+    
+    // History
+    fun getHeartRateHistory(): Flow<List<HeartRateData>>
+    fun getBloodOxygenHistory(): Flow<List<BloodOxygenData>>
+    fun getBloodPressureHistory(): Flow<List<BloodPressureData>>
+    fun getTemperatureHistory(): Flow<List<TemperatureData>>
+    fun getStepsHistory(): Flow<List<StepData>>
+
     // Battery
     val batteryLevel: StateFlow<Int>
     suspend fun refreshBatteryLevel()

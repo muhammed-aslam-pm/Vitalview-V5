@@ -492,6 +492,51 @@ class FitnessBandRepository @Inject constructor(
             .flowOn(Dispatchers.IO)
     }
 
+    override fun getHeartRateHistory(): Flow<List<HeartRateData>> {
+        return database.heartRateDao().getAll().map { entities ->
+            entities.map { 
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                HeartRateData(it.timestamp, it.heartRate, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getBloodOxygenHistory(): Flow<List<BloodOxygenData>> {
+        return database.bloodOxygenDao().getAll().map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp)) 
+                BloodOxygenData(it.timestamp, it.spo2, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getBloodPressureHistory(): Flow<List<BloodPressureData>> {
+         return database.bloodPressureDao().getAll().map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                BloodPressureData(it.timestamp, it.systolic, it.diastolic, it.heartRate, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getTemperatureHistory(): Flow<List<TemperatureData>> {
+        return database.temperatureDao().getAll().map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                TemperatureData(it.timestamp, it.temperature, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getStepsHistory(): Flow<List<StepData>> {
+        return database.stepDataDao().getAll().map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                StepData(it.timestamp, it.steps, it.distance, it.calories, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
     override fun disconnect() {
         bleManager.disconnect()
         _connectionState.value = BleManager.ConnectionState.Disconnected

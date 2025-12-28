@@ -16,4 +16,7 @@ interface StepDataDao {
 
     @Query("SELECT * FROM steps ORDER BY timestamp DESC LIMIT 7")
     fun getLastWeek(): Flow<List<StepDataEntity>>
+
+    @Query("SELECT * FROM steps ORDER BY timestamp DESC")
+    fun getAll(): Flow<List<StepDataEntity>>
 }

@@ -182,6 +182,18 @@ class MainActivity : AppCompatActivity() {
         binding.btnSync.setOnClickListener {
             viewModel.syncData()
         }
+
+        binding.cardHeartRate.setOnClickListener { openDetail("Heart Rate") }
+        binding.cardSpO2.setOnClickListener { openDetail("SpO2") }
+        binding.cardBloodPressure.setOnClickListener { openDetail("Blood Pressure") }
+        binding.cardTemperature.setOnClickListener { openDetail("Temperature") }
+        binding.cardSteps.setOnClickListener { openDetail("Steps") }
+    }
+
+    private fun openDetail(metricName: String) {
+        val intent = Intent(this, MetricDetailActivity::class.java)
+        intent.putExtra("METRIC_NAME", metricName)
+        startActivity(intent)
     }
 
     private fun updateConnectionUI(state: BleManager.ConnectionState) {

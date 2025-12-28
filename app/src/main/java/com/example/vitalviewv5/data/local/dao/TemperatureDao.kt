@@ -16,4 +16,7 @@ interface TemperatureDao {
 
     @Query("SELECT * FROM temperature WHERE date = :date ORDER BY timestamp DESC")
     fun getByDate(date: String): Flow<List<TemperatureEntity>>
+
+    @Query("SELECT * FROM temperature ORDER BY timestamp DESC")
+    fun getAll(): Flow<List<TemperatureEntity>>
 }

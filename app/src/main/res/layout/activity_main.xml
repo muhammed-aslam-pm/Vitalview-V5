@@ -172,6 +172,7 @@
 
                     <!-- Heart Rate Card -->
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardHeartRate"
                         style="@style/DashboardCard"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
@@ -208,6 +209,7 @@
 
                     <!-- SpO2 Card -->
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardSpO2"
                         style="@style/DashboardCard"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
@@ -245,6 +247,7 @@
 
                 <!-- Row 2: Blood Pressure -->
                 <com.google.android.material.card.MaterialCardView
+                    android:id="@+id/cardBloodPressure"
                     style="@style/DashboardCard"
                     android:layout_width="match_parent"
                     android:layout_height="wrap_content"
@@ -295,6 +298,7 @@
 
                     <!-- Steps Card -->
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardSteps"
                         style="@style/DashboardCard"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
@@ -331,6 +335,7 @@
 
                     <!-- Temp Card -->
                     <com.google.android.material.card.MaterialCardView
+                        android:id="@+id/cardTemperature"
                         style="@style/DashboardCard"
                         android:layout_width="0dp"
                         android:layout_height="wrap_content"
