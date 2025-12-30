@@ -21,6 +21,9 @@ interface HeartRateDao {
     @Query("SELECT * FROM heart_rate ORDER BY timestamp DESC")
     fun getAll(): Flow<List<HeartRateEntity>>
 
+    @Query("SELECT * FROM heart_rate ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecent(limit: Int): Flow<List<HeartRateEntity>>
+
     @Query("DELETE FROM heart_rate")
     suspend fun deleteAll()
 }

@@ -19,4 +19,7 @@ interface TemperatureDao {
 
     @Query("SELECT * FROM temperature ORDER BY timestamp DESC")
     fun getAll(): Flow<List<TemperatureEntity>>
+
+    @Query("SELECT * FROM temperature ORDER BY timestamp DESC LIMIT :limit")
+    fun getRecent(limit: Int): Flow<List<TemperatureEntity>>
 }

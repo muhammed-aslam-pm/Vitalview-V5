@@ -51,17 +51,52 @@ class FitnessBandRepository @Inject constructor(
     }
 
     private fun observeSdkData() {
-        sdkWrapper.observeData()
+        val dataFlow = sdkWrapper.observeData().shareIn(repositoryScope, SharingStarted.Eagerly)
+
+        // Flow 1: Control & Historical Data (Process Immediately)
+        dataFlow
+            .filter { data ->
+                val type = extractDataType(data)
+                type != 23 && type != null
+            }
             .onEach { dataMap ->
                 repositoryScope.launch {
                     try {
                         processIncomingData(dataMap)
                     } catch (e: Exception) {
-                        Timber.e(e, "❌ Error in processIncomingData")
+                        Timber.e(e, "❌ Error in processIncomingData (immediate)")
                     }
                 }
             }
             .launchIn(repositoryScope)
+
+        // Flow 2: Real-time Data (Debounce to 2s to prevent ANR)
+        dataFlow
+            .filter { data -> extractDataType(data) == 23 }
+            .debounce(2000)
+            .onEach { dataMap ->
+                repositoryScope.launch {
+                    try {
+                        processIncomingData(dataMap)
+                    } catch (e: Exception) {
+                        Timber.e(e, "❌ Error in processIncomingData (debounced)")
+                    }
+                }
+            }
+            .launchIn(repositoryScope)
+    }
+
+    private fun extractDataType(dataMap: Map<String, Any>): Int? {
+        val dataTypeValue = dataMap["dataType"]
+        return when (dataTypeValue) {
+            is Number -> dataTypeValue.toInt()
+            is Int -> dataTypeValue
+            is Long -> dataTypeValue.toInt()
+            is Byte -> dataTypeValue.toInt()
+            is Short -> dataTypeValue.toInt()
+            is String -> dataTypeValue.toIntOrNull()
+            else -> null
+        }
     }
 
     private suspend fun processIncomingData(dataMap: Map<String, Any>) {
@@ -447,6 +482,19 @@ class FitnessBandRepository @Inject constructor(
 
         bleManager.writeData(sdkWrapper.enableRealTimeData(true, true))
         Timber.d("✅ Enabled real-time data streaming")
+        
+        // ✅ NEW: Auto-sync historical data on connection (including Sleep)
+        repositoryScope.launch {
+            kotlinx.coroutines.delay(2000) // Give it a moment to settle
+            Timber.d("🚀 Auto-triggering historical data sync...")
+            syncHistoricalData().collect { result ->
+                when (result) {
+                    is Resource.Success -> Timber.d("✅ Auto-sync completed")
+                    is Resource.Error -> Timber.e("❌ Auto-sync failed: ${result.message}")
+                    is Resource.Loading -> Timber.d("🔄 Auto-sync in progress...")
+                }
+            }
+        }
     }
 
 
@@ -578,6 +626,60 @@ class FitnessBandRepository @Inject constructor(
     }
 
     override fun getSleepHistory(): Flow<List<SleepData>> {
+        return database.sleepDataDao().getRecentSleep().map { entities ->
+            entities.map {
+                SleepData(it.timestamp, it.date, it.sleepValue, SleepLevel.valueOf(it.sleepLevel))
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentHeartRateHistory(limit: Int): Flow<List<HeartRateData>> {
+        return database.heartRateDao().getRecent(limit).map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                HeartRateData(it.timestamp, it.heartRate, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentBloodOxygenHistory(limit: Int): Flow<List<BloodOxygenData>> {
+        return database.bloodOxygenDao().getRecent(limit).map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                BloodOxygenData(it.timestamp, it.spo2, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentBloodPressureHistory(limit: Int): Flow<List<BloodPressureData>> {
+        return database.bloodPressureDao().getRecent(limit).map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                BloodPressureData(it.timestamp, it.systolic, it.diastolic, it.heartRate, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentTemperatureHistory(limit: Int): Flow<List<TemperatureData>> {
+        return database.temperatureDao().getRecent(limit).map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                TemperatureData(it.timestamp, it.temperature, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentStepsHistory(limit: Int): Flow<List<StepData>> {
+        return database.stepDataDao().getRecent(limit).map { entities ->
+            entities.map {
+                val dateStr = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault()).format(Date(it.timestamp))
+                StepData(it.timestamp, it.steps, it.distance, it.calories, dateStr)
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    override fun getRecentSleepHistory(limit: Int): Flow<List<SleepData>> {
+        // Sleep already uses getRecentSleep with hardcoded 500, let's keep it or update DAO
         return database.sleepDataDao().getRecentSleep().map { entities ->
             entities.map {
                 SleepData(it.timestamp, it.date, it.sleepValue, SleepLevel.valueOf(it.sleepLevel))

@@ -12,25 +12,32 @@ object SdkDataParser {
     private val dateFormatNoColon = SimpleDateFormat("yyyy.MM.dd HHmmss", Locale.getDefault())
     private val dateFormatShort = SimpleDateFormat("yyyy.MM.dd", Locale.getDefault())
     
+    private val hyphenDateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
+
     private fun parseTimestamp(dateStr: String): Long? {
-        // The date format is "yyyy.MM.dd HH:mm:ss" which requires a space between date and time
-        // So we should NOT remove all spaces, just trim and normalize
+        if (dateStr.isEmpty()) return null
+        
+        // Normalize: The band sometimes sends "2025.08.19 15:12:18" or "2025-08-19 15:12:18"
         val normalized = dateStr.trim()
         
         return try {
-            // Try with space (standard format: "2025.12.27 18:31:31")
-            dateFormat.parse(normalized)?.time
+            if (normalized.contains("-")) {
+                hyphenDateFormat.parse(normalized)?.time
+            } else {
+                dateFormat.parse(normalized)?.time
+            }
         } catch (e: Exception) {
             try {
-                // Try without space (fallback: "2025.12.2718:31:31" -> "2025.12.27 18:31:31")
-                val withSpace = normalized.replaceFirst(Regex("(\\d{4}\\.\\d{2}\\.\\d{2})(\\d{2}:\\d{2}:\\d{2})"), "$1 $2")
-                dateFormat.parse(withSpace)?.time
+                // Secondary fallback for formats without spaces or with slight variations
+                val withDots = normalized.replace("-", ".")
+                dateFormat.parse(withDots)?.time
             } catch (e2: Exception) {
                 try {
-                    // Try without colons in time (format: "yyyy.MM.dd HHmmss")
-                    dateFormatNoColon.parse(normalized.replace(" ", ""))?.time
+                    // Try without space if it's packed
+                    val withSpace = normalized.replaceFirst(Regex("(\\d{4}[.-]\\d{2}[.-]\\d{2})(\\d{2}:\\d{2}:\\d{2})"), "$1 $2")
+                    if (withSpace.contains("-")) hyphenDateFormat.parse(withSpace)?.time else dateFormat.parse(withSpace)?.time
                 } catch (e3: Exception) {
-                    Timber.w("⚠️ Failed to parse date: $dateStr (normalized: $normalized)")
+                    Timber.w("⚠️ Failed to parse date: $dateStr")
                     null
                 }
             }

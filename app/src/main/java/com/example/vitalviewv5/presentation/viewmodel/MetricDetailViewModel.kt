@@ -48,15 +48,13 @@ class MetricDetailViewModel @Inject constructor(
     fun loadMetric(metricType: String) {
         _metricName.value = metricType
         
-        viewModelScope.launch {
-            when (metricType) {
-                "Heart Rate" -> loadHeartRate()
-                "SpO2" -> loadSpO2()
-                "Blood Pressure" -> loadBloodPressure()
-                "Temperature" -> loadTemperature()
-                "Steps" -> loadSteps()
-                "Sleep" -> loadSleep()
-            }
+        when (metricType) {
+            "Heart Rate" -> loadHeartRate()
+            "SpO2" -> loadSpO2()
+            "Blood Pressure" -> loadBloodPressure()
+            "Temperature" -> loadTemperature()
+            "Steps" -> loadSteps()
+            "Sleep" -> loadSleep()
         }
     }
 
@@ -83,98 +81,111 @@ class MetricDetailViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadHeartRate() {
-        repository.getHeartRateHistory().collect { list ->
-            val points = list.sortedBy { it.timestamp }.map { 
-                HistoryPoint(it.heartRate.toFloat(), it.timestamp, it.date)
-            }
-            _historyData.value = points
-            if (points.isNotEmpty()) {
-                val avg = points.map { it.value }.average().toInt()
-                _summaryValue.value = "$avg BPM (Avg)"
+    private fun loadHeartRate() {
+        viewModelScope.launch {
+            repository.getRecentHeartRateHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        HistoryPoint(it.heartRate.toFloat(), it.timestamp, it.date)
+                    }
+                }
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val avg = points.map { it.value }.average().toInt()
+                    _summaryValue.value = "$avg BPM (Avg)"
+                }
             }
         }
     }
 
-    private suspend fun loadSpO2() {
-        repository.getBloodOxygenHistory().collect { list ->
-             val points = list.sortedBy { it.timestamp }.map { 
-                HistoryPoint(it.spo2.toFloat(), it.timestamp, it.date)
-            }
-            _historyData.value = points
-             if (points.isNotEmpty()) {
-                val avg = points.map { it.value }.average().toInt()
-                _summaryValue.value = "$avg % (Avg)"
+    private fun loadSpO2() {
+        viewModelScope.launch {
+            repository.getRecentBloodOxygenHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        HistoryPoint(it.spo2.toFloat(), it.timestamp, it.date)
+                    }
+                }
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val avg = points.map { it.value }.average().toInt()
+                    _summaryValue.value = "$avg % (Avg)"
+                }
             }
         }
     }
     
-    private suspend fun loadBloodPressure() {
-        // For BP graph, let's just show Systolic for now or maybe we can improve later
-        repository.getBloodPressureHistory().collect { list ->
-             val points = list.sortedBy { it.timestamp }.map { 
-                // Using Systolic for graph visualization
-                HistoryPoint(it.systolic.toFloat(), it.timestamp, "${it.systolic}/${it.diastolic} - ${it.date}")
-            }
-            _historyData.value = points
-            if (points.isNotEmpty()) {
-                val last = list.maxByOrNull { it.timestamp }
-                _summaryValue.value = "${last?.systolic}/${last?.diastolic} mmHg (Latest)"
-            }
-        }
-    }
-
-    private suspend fun loadTemperature() {
-        repository.getTemperatureHistory().collect { list ->
-            val points = list.sortedBy { it.timestamp }.map { 
-                HistoryPoint(it.temperature, it.timestamp, it.date)
-            }
-            _historyData.value = points
-             if (points.isNotEmpty()) {
-                val avg = points.map { it.value }.average()
-                _summaryValue.value = String.format("%.1f °C (Avg)", avg)
-            }
-        }
-    }
-
-    private suspend fun loadSteps() {
-        repository.getStepsHistory().collect { list ->
-            // Steps might be accumulated, but let's just show raw history entries
-            val points = list.sortedBy { it.timestamp }.map { 
-                HistoryPoint(it.steps.toFloat(), it.timestamp, it.date)
-            }
-            _historyData.value = points
-             if (points.isNotEmpty()) {
-                val total = points.sumOf { it.value.toDouble() }.toInt()
-                _summaryValue.value = "$total Steps (Total)"
-            }
-        }
-    }
-
-    private suspend fun loadSleep() {
-        repository.getSleepHistory().collect { list ->
-            // For Graph: Map Sleep Levels to values 
-            // 0: Deep, 1: Light, 2: Awake, 3: REM
-            // We can visualize this on the Y-axis.
-            val points = list.sortedBy { it.timestamp }.map { 
-                val yVal = when(it.sleepLevel) {
-                    com.example.vitalviewv5.domain.model.SleepLevel.DEEP_SLEEP -> 0f
-                    com.example.vitalviewv5.domain.model.SleepLevel.LIGHT_SLEEP -> 1f
-                    com.example.vitalviewv5.domain.model.SleepLevel.REM -> 2f
-                    com.example.vitalviewv5.domain.model.SleepLevel.AWAKE -> 3f
+    private fun loadBloodPressure() {
+        viewModelScope.launch {
+            repository.getRecentBloodPressureHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        HistoryPoint(it.systolic.toFloat(), it.timestamp, "${it.systolic}/${it.diastolic} - ${it.date}")
+                    }
                 }
-                HistoryPoint(yVal, it.timestamp, "${it.sleepLevel} - ${it.date}")
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val last = list.maxByOrNull { it.timestamp }
+                    _summaryValue.value = "${last?.systolic}/${last?.diastolic} mmHg (Latest)"
+                }
             }
-            _historyData.value = points
-             if (points.isNotEmpty()) {
-                 // Calculate total sleep duration (count of records * unit length?)
-                 // Assuming 1 record is 1 unit (e.g. 1 minute or 5 minutes?) 
-                 // Actually the records are usually per minute if using mode 1
-                 // Let's just show count of records as minutes approx for now for Summary
-                 val totalMinutes = list.size // This is rough approximation as records might be 5 mins
-                 val hours = list.size / 60
-                 val mins = list.size % 60
-                 _summaryValue.value = "${hours}h ${mins}m (Approx)"
+        }
+    }
+
+    private fun loadTemperature() {
+        viewModelScope.launch {
+            repository.getRecentTemperatureHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        HistoryPoint(it.temperature, it.timestamp, it.date)
+                    }
+                }
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val avg = points.map { it.value }.average()
+                    _summaryValue.value = String.format("%.1f °C (Avg)", avg)
+                }
+            }
+        }
+    }
+
+    private fun loadSteps() {
+        viewModelScope.launch {
+            repository.getRecentStepsHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        HistoryPoint(it.steps.toFloat(), it.timestamp, it.date)
+                    }
+                }
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val total = points.sumOf { it.value.toDouble() }.toInt()
+                    _summaryValue.value = "$total Steps (Total)"
+                }
+            }
+        }
+    }
+
+    private fun loadSleep() {
+        viewModelScope.launch {
+            repository.getRecentSleepHistory(500).collect { list ->
+                val points = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+                    list.sortedBy { it.timestamp }.map { 
+                        val yVal = when(it.sleepLevel) {
+                            com.example.vitalviewv5.domain.model.SleepLevel.DEEP_SLEEP -> 0f
+                            com.example.vitalviewv5.domain.model.SleepLevel.LIGHT_SLEEP -> 1f
+                            com.example.vitalviewv5.domain.model.SleepLevel.REM -> 2f
+                            com.example.vitalviewv5.domain.model.SleepLevel.AWAKE -> 3f
+                        }
+                        HistoryPoint(yVal, it.timestamp, "${it.sleepLevel} - ${it.date}")
+                    }
+                }
+                _historyData.value = points
+                if (points.isNotEmpty()) {
+                    val hours = list.size / 60
+                    val mins = list.size % 60
+                    _summaryValue.value = "${hours}h ${mins}m (Approx)"
+                }
             }
         }
     }
