@@ -200,7 +200,11 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun openDetail(metricName: String) {
-        val intent = Intent(this, MetricDetailActivity::class.java)
+        val intent = if (metricName == "Sleep") {
+            Intent(this, SleepDetailActivity::class.java)
+        } else {
+            Intent(this, MetricDetailActivity::class.java)
+        }
         intent.putExtra("METRIC_NAME", metricName)
         startActivity(intent)
     }

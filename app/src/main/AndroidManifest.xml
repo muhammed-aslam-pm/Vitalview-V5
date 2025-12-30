@@ -51,6 +51,12 @@
             android:exported="false"
             android:parentActivityName=".presentation.MainActivity"
             android:theme="@style/Theme.VitalviewV5" />
+
+        <activity
+            android:name=".presentation.SleepDetailActivity"
+            android:exported="false"
+            android:parentActivityName=".presentation.MainActivity"
+            android:theme="@style/Theme.VitalviewV5" />
     </application>
 
 </manifest>

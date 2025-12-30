@@ -47,6 +47,8 @@ interface IFitnessBandRepository {
     fun getRecentStepsHistory(limit: Int = 500): Flow<List<StepData>>
     fun getRecentSleepHistory(limit: Int = 500): Flow<List<SleepData>>
 
+    fun getSleepSummary(date: String): Flow<SleepSummary?>
+
     suspend fun startSpotMeasurement(type: SpotMeasurementType): Resource<Boolean>
 
     // Battery

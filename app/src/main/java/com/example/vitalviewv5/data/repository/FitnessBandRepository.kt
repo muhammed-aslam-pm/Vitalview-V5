@@ -686,6 +686,76 @@ class FitnessBandRepository @Inject constructor(
             }
         }.flowOn(Dispatchers.IO)
     }
+
+    override fun getSleepSummary(date: String): Flow<SleepSummary?> {
+        return database.sleepDataDao().getSleepByDate(date).flatMapLatest { entities ->
+            if (entities.isEmpty()) return@flatMapLatest flowOf(null)
+
+            val sorted = entities.sortedBy { it.timestamp }
+            val startTime = sorted.first().timestamp
+            val endTime = sorted.last().timestamp
+
+            // Use combine to fetch correlated data
+            combine(
+                database.heartRateDao().getByRange(startTime, endTime),
+                database.bloodOxygenDao().getByRange(startTime, endTime)
+            ) { hrEntities, spo2Entities ->
+                
+                var deep = 0; var light = 0; var rem = 0; var awake = 0
+                val totalMinutes = entities.size // Assuming 1 record per minute for now, or use timestamp diff
+                
+                entities.forEach {
+                    when (it.sleepLevel) {
+                        "DEEP_SLEEP" -> deep++
+                        "LIGHT_SLEEP" -> light++
+                        "REM" -> rem++
+                        "AWAKE" -> awake++
+                    }
+                }
+
+                val totalSleep = deep + light + rem
+                val score = calculateSleepScore(deep, rem, light, totalSleep)
+                
+                SleepSummary(
+                    date = date,
+                    sleepScore = score,
+                    totalSleepTimeMinutes = totalSleep,
+                    inBedDurationMinutes = entities.size,
+                    deepSleepMinutes = deep,
+                    lightSleepMinutes = light,
+                    remSleepMinutes = rem,
+                    awakeMinutes = awake,
+                    deepSleepPercentage = if (totalSleep > 0) (deep * 100 / totalSleep) else 0,
+                    lightSleepPercentage = if (totalSleep > 0) (light * 100 / totalSleep) else 0,
+                    remSleepPercentage = if (totalSleep > 0) (rem * 100 / totalSleep) else 0,
+                    awakePercentage = (awake * 100 / entities.size),
+                    sleepEfficiency = if (entities.isNotEmpty()) (totalSleep * 100 / entities.size) else 0,
+                    sleepLatency = 5, // Mock or calculate from first movement
+                    sleepDebt = 490 - totalSleep, // Goal 8h10m = 490m
+                    startTime = startTime,
+                    endTime = endTime,
+                    stages = entities.map { 
+                        SleepData(it.timestamp, it.date, it.sleepValue, SleepLevel.valueOf(it.sleepLevel)) 
+                    },
+                    correlatedHeartRate = hrEntities.map { 
+                        val dStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.timestamp))
+                        HeartRateData(it.timestamp, it.heartRate, dStr) 
+                    },
+                    correlatedSpO2 = spo2Entities.map { 
+                        val dStr = SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.timestamp))
+                        BloodOxygenData(it.timestamp, it.spo2, dStr) 
+                    }
+                )
+            }
+        }.flowOn(Dispatchers.IO)
+    }
+
+    private fun calculateSleepScore(deep: Int, rem: Int, light: Int, total: Int): Int {
+        if (total == 0) return 0
+        // Heuristic: Weighted quality of stages
+        val score = (deep * 1.5 + rem * 1.2 + light * 1.0) / (480 / 100.0) // Normalize against 8h
+        return score.toInt().coerceIn(0, 100)
+    }
     
     override suspend fun startSpotMeasurement(type: SpotMeasurementType): Resource<Boolean> {
         return try {

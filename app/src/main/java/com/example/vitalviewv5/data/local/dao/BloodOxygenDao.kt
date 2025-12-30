@@ -22,4 +22,7 @@ interface BloodOxygenDao {
 
     @Query("SELECT * FROM blood_oxygen ORDER BY timestamp DESC LIMIT :limit")
     fun getRecent(limit: Int): Flow<List<BloodOxygenEntity>>
+
+    @Query("SELECT * FROM blood_oxygen WHERE timestamp >= :start AND timestamp <= :end ORDER BY timestamp ASC")
+    fun getByRange(start: Long, end: Long): Flow<List<BloodOxygenEntity>>
 }
